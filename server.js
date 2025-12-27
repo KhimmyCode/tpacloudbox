@@ -6,20 +6,32 @@ const mime = require('mime-types');
 const config = require('./config.json');
 
 const app = express();
-const uploadDir = path.join(__dirname, 'uploads');
-fs.ensureDirSync(uploadDir);
+const baseDir = path.resolve(__dirname, config.uploadDir || 'uploads');
+fs.ensureDirSync(baseDir);
 
 app.use(express.json());
 app.use(express.static('public'));
 
-const safePath = (userPath = '') => {
-    const baseDir = path.resolve(__dirname, config.uploadDir || 'uploads');
-    const targetPath = path.resolve(baseDir, userPath);
-    if (!targetPath.startsWith(baseDir)) {
-        throw new Error('Unauthorized access');
+// --- LOG SYSTEM ---
+const logger = async (req, action, details) => {
+    const ip = req.ip.replace('::ffff:', '') || 'unknown';
+    const timestamp = new Date().toLocaleString('th-TH');
+    const logEntry = `[${timestamp}] [IP: ${ip}] ${action.toUpperCase()}: ${details}`;
+    
+    console.log(logEntry); // แสดงใน Terminal
+    try {
+        await fs.appendFile(path.join(__dirname, 'activity.log'), logEntry + '\n'); // บันทึกลงไฟล์
+    } catch (err) {
+        console.error('Logging Error:', err);
     }
-    return targetPath;
+};
 
+// --- CORE FUNCTIONS ---
+const safePath = (userPath = '') => {
+    const cleanUserPath = decodeURIComponent(userPath).replace(/^[\/\\]+/, '');
+    const targetPath = path.join(baseDir, cleanUserPath);
+    if (!targetPath.startsWith(baseDir)) throw new Error('Unauthorized access');
+    return targetPath;
 };
 
 const getUniquePath = async (targetPath) => {
@@ -51,16 +63,14 @@ const isAdmin = (req, res, next) => {
     res.status(403).json({ error: 'Admin Access Denied' });
 };
 
-app.get('/api/check-admin', (req, res) => {
-    res.json({ isAdmin: checkIsAdmin(req) });
-});
+// --- API ENDPOINTS ---
+app.get('/api/check-admin', (req, res) => res.json({ isAdmin: checkIsAdmin(req) }));
 
 app.get('/api/files', async (req, res) => {
     try {
         const relPath = req.query.path || '';
         const target = safePath(relPath);
         const locked = config.lockedFolders.find(f => f.folderName === relPath);
-        
         if (locked && req.query.pin !== locked.pin) return res.status(401).json({ locked: true });
 
         const items = await fs.readdir(target, { withFileTypes: true });
@@ -70,139 +80,91 @@ app.get('/api/files', async (req, res) => {
             return {
                 name: item.name,
                 isFolder: item.isDirectory(),
-                path: path.join(relPath, item.name),
+                path: path.join(relPath, item.name).replace(/\\/g, '/'),
                 ext: path.extname(item.name).toLowerCase(),
                 size: item.isDirectory() ? '--' : formatSize(stats.size),
-                date: stats.mtime.toLocaleDateString('en-GB') + ' ' + stats.mtime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                date: stats.mtime.toLocaleString('th-TH')
             };
         }));
         res.json(data);
     } catch (e) { res.status(500).send(e.message); }
 });
 
-app.get('/api/search', async (req, res) => {
-    try {
-        const q = req.query.q.toLowerCase();
-        const results = [];
-        const scan = async (dir) => {
-            const items = await fs.readdir(dir, { withFileTypes: true });
-            for (const item of items) {
-                const fullPath = path.join(dir, item.name);
-                const relPath = path.relative(uploadDir, fullPath);
-                if (item.name.toLowerCase().includes(q)) {
-                    const stats = await fs.stat(fullPath);
-                    results.push({
-                        name: item.name,
-                        isFolder: item.isDirectory(),
-                        path: relPath.replace(/\\/g, '/'),
-                        ext: path.extname(item.name).toLowerCase(),
-                        size: item.isDirectory() ? '--' : formatSize(stats.size),
-                        date: stats.mtime.toLocaleDateString('en-GB') + ' ' + stats.mtime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
-                    });
-                }
-                if (item.isDirectory()) await scan(fullPath);
-            }
-        };
-        await scan(uploadDir);
-        res.json(results);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 app.put('/api/rename', isAdmin, async (req, res) => {
-    const { oldPath, newName } = req.body;
-    const oldFull = safePath(oldPath);
-    const newFull = path.join(path.dirname(oldFull), newName);
-    await fs.move(oldFull, newFull);
-    res.json({ success: true });
+    try {
+        const { oldPath, newName } = req.body;
+        const oldFull = safePath(oldPath);
+        const newFull = path.join(path.dirname(oldFull), newName);
+        await fs.move(oldFull, newFull);
+        await logger(req, 'RENAME', `${oldPath} -> ${newName}`);
+        res.json({ success: true });
+    } catch (e) { res.status(500).send(e.message); }
 });
 
 app.delete('/api/delete', isAdmin, async (req, res) => {
-    await fs.remove(safePath(req.query.path));
-    res.json({ success: true });
+    try {
+        const p = req.query.path;
+        await fs.remove(safePath(p));
+        await logger(req, 'DELETE', p);
+        res.json({ success: true });
+    } catch (e) { res.status(500).send(e.message); }
 });
 
 app.put('/api/move', isAdmin, async (req, res) => {
-    const { source, destination } = req.body;
-    const srcFull = safePath(source);
-    const destFull = await getUniquePath(path.join(safePath(destination), path.basename(source)));
-    await fs.move(srcFull, destFull);
-    res.json({ success: true });
+    try {
+        const { source, destination } = req.body;
+        const srcFull = safePath(source);
+        const destFull = await getUniquePath(path.join(safePath(destination), path.basename(source)));
+        await fs.move(srcFull, destFull);
+        await logger(req, 'MOVE', `${source} TO ${destination}`);
+        res.json({ success: true });
+    } catch (e) { res.status(500).send(e.message); }
 });
 
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
-
+const upload = multer({ storage: multer.memoryStorage() });
 app.post('/api/upload', isAdmin, upload.array('files'), async (req, res) => {
     try {
         const targetFolder = safePath(req.body.path);
-        const customNames = JSON.parse(req.body.names);
+        const customNames = JSON.parse(req.body.names || "[]");
+        let uploadedFiles = [];
 
         for (let i = 0; i < req.files.length; i++) {
             let originalName = Buffer.from(req.files[i].originalname, 'latin1').toString('utf8');
-            const originalExt = path.extname(originalName);
-
             let newName = customNames[i] || originalName;
-
-            if (!path.extname(newName)) {
-                newName += originalExt;
-            }
+            if (!path.extname(newName)) newName += path.extname(originalName);
 
             const finalPath = await getUniquePath(path.join(targetFolder, newName));
             await fs.writeFile(finalPath, req.files[i].buffer);
+            uploadedFiles.push(path.basename(finalPath));
         }
+        await logger(req, 'UPLOAD', `Folder: ${req.body.path || 'Root'}, Files: ${uploadedFiles.join(', ')}`);
         res.json({ success: true });
-    } catch (e) { 
-        console.error(e);
-        res.status(500).send(e.message); 
-    }
+    } catch (e) { res.status(500).send(e.message); }
 });
 
 app.post('/api/mkdir', isAdmin, async (req, res) => {
-    await fs.ensureDir(safePath(req.body.path));
-    res.json({ success: true });
+    try {
+        await fs.ensureDir(safePath(req.body.path));
+        await logger(req, 'MKDIR', req.body.path);
+        res.json({ success: true });
+    } catch (e) { res.status(500).send(e.message); }
 });
 
-app.get('/api/download', (req, res) => {
+app.get('/api/download', async (req, res) => {
     try {
         const fullPath = safePath(req.query.path);
-        if (!fs.existsSync(fullPath)) return res.status(404).send('File not found');
+        if (!fs.existsSync(fullPath)) return res.status(404).send('Not Found');
 
-        const filename = path.basename(fullPath);
-        const encodedName = encodeURIComponent(filename);
-        
-        // ใช้ mime-types เพื่อระบุประเภทไฟล์ให้ Browser รู้จัก
-        const contentType = mime.lookup(fullPath) || 'application/octet-stream';
-
-        res.setHeader('Content-Type', contentType);
-        
-        // --- จุดสำคัญ: เปลี่ยน inline เป็น attachment ---
-        // attachment จะบังคับให้ Browser ดาวน์โหลดไฟล์ และจะเด้งหน้าต่างถามที่เก็บ (หากตั้งค่า Browser ไว้)
+        const encodedName = encodeURIComponent(path.basename(fullPath));
         res.setHeader('Content-Disposition', `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`);
         
+        await logger(req, 'DOWNLOAD', req.query.path);
         res.sendFile(fullPath);
-    } catch (e) { 
-        res.status(500).send('Error processing download'); 
-    }
+    } catch (e) { res.status(500).send('Error'); }
 });
 
-// API สำหรับ Preview (เปิดดูใน Browser)
-app.get('/api/preview', (req, res) => {
-    try {
-        const fullPath = safePath(req.query.path);
-        if (!fs.existsSync(fullPath)) return res.status(404).send('File not found');
-
-        const filename = path.basename(fullPath);
-        const encodedName = encodeURIComponent(filename);
-        const contentType = mime.lookup(fullPath) || 'application/octet-stream';
-
-        res.setHeader('Content-Type', contentType);
-        // ใช้ inline เพื่อให้ Browser พยายาม Render ไฟล์แทนการดาวน์โหลด
-        res.setHeader('Content-Disposition', `inline; filename="${encodedName}"; filename*=UTF-8''${encodedName}`);
-        
-        res.sendFile(fullPath);
-    } catch (e) { 
-        res.status(500).send('Error'); 
-    }
+const PORT = config.port || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📝 Activity log is being saved to activity.log`);
 });
-
-app.listen(config.port, '0.0.0.0', () => console.log(`Server running at http://localhost:${config.port}`));
