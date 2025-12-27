@@ -15,6 +15,9 @@
 <body>
     <nav class="top-nav">
         <div class="nav-left">
+            <div class="menu-btn" onclick="toggleSidebar()">
+                <i data-lucide="menu"></i>
+            </div>
             <div class="logo">
                 <div class="logo-box"><i data-lucide="cloud-lightning"></i></div>
                 <span>The Process Academy <b>CloudStorage</b> <span class="version-tag">V0.1</span></span>
@@ -95,6 +98,11 @@
     <input type="file" id="hiddenInput" multiple hidden onchange="processFiles(this.files)">
 
     <script src="script.js"></script>
+    <script>
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('active');
+        }
+    </script>
 </body>
 
 </html>
