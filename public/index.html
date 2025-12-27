@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPA | CloudBox</title>
+    <link rel="stylesheet" href="style.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Sarabun:wght@300;400;500&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+    <nav class="top-nav">
+        <div class="nav-left">
+            <div class="logo">
+                <div class="logo-box"><i data-lucide="cloud-lightning"></i></div>
+                <span>The Process Academy <b>CloudStorage</b> <span class="version-tag">V0.1</span></span>
+            </div>
+        </div>
+
+        <div class="nav-center">
+            <div class="search-container">
+                <i data-lucide="search"></i>
+                <input type="text" id="searchInput" placeholder="Search files in all folders..."
+                    oninput="handleSearch(this.value)">
+            </div>
+        </div>
+
+        <div class="nav-right">
+            <div id="admin-badge" class="badge">Guest Mode</div>
+        </div>
+    </nav>
+
+    <div class="app-container">
+        <aside class="sidebar">
+            <div id="admin-actions" class="hidden">
+                <div class="action-stack">
+                    <button class="btn-new" onclick="document.getElementById('hiddenInput').click()">
+                        <i data-lucide="plus"></i> <span>New Upload</span>
+                    </button>
+                    <button class="btn-folder-action" onclick="createNewFolder()">
+                        <i data-lucide="folder-plus"></i> <span>New Folder</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="menu-list">
+                <div class="menu-item active" onclick="loadFiles('')">
+                    <i data-lucide="home"></i> <span>All Files</span>
+                </div>
+                <div class="menu-divider"></div>
+                <div class="storage-card">
+                    <div class="storage-info">
+                        <i data-lucide="database"></i>
+                        <span>Local Storage</span>
+                    </div>
+                    <div class="storage-bar">
+                        <div class="fill" style="width: 40%"></div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-view" id="drop-area">
+            <div id="upload-queue" class="upload-queue hidden">
+                <div class="queue-header">
+                    <div class="queue-title">
+                        <i data-lucide="loader"></i>
+                        <span>Upload Queue (<span id="queue-count">0</span>)</span>
+                    </div>
+                    <div class="queue-actions">
+                        <button class="btn-primary-sm" onclick="startFinalUpload()">Upload All</button>
+                        <button class="btn-ghost-sm" onclick="clearQueue()">Cancel</button>
+                    </div>
+                </div>
+                <div id="draft-list" class="draft-list">
+                </div>
+                <div class="queue-footer">
+                    <i data-lucide="mouse-pointer-2"></i> Drag more files here to add to queue
+                </div>
+            </div>
+
+            <header class="view-header">
+                <nav id="breadcrumb" class="breadcrumb">Home</nav>
+            </header>
+
+            <div id="file-grid" class="file-grid">
+            </div>
+        </main>
+    </div>
+
+    <input type="file" id="hiddenInput" multiple hidden onchange="processFiles(this.files)">
+
+    <script src="script.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,18 @@
+{
+  "adminIps": [
+    "192.168.1.138",
+    "192.168.1.172", 
+    "192.168.1.150"
+  ],
+  "port": 3000,
+  "lockedFolders": [
+    {
+      "folderName": "Khifm",
+      "pin": "1234"
+    },
+    {
+      "folderName": "secret-files",
+      "pin": "9999"
+    }
+  ]
+}
