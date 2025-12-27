@@ -66,6 +66,35 @@ const isAdmin = (req, res, next) => {
 // --- API ENDPOINTS ---
 app.get('/api/check-admin', (req, res) => res.json({ isAdmin: checkIsAdmin(req) }));
 
+app.get('/api/search', async (req, res) => {
+    try {
+        const q = req.query.q.toLowerCase();
+        const results = [];
+        const scan = async (dir) => {
+            const items = await fs.readdir(dir, { withFileTypes: true });
+            for (const item of items) {
+                const fullPath = path.join(dir, item.name);
+                const relPath = path.relative(baseDir, fullPath);
+                if (item.name.toLowerCase().includes(q)) {
+                    const stats = await fs.stat(fullPath);
+                    results.push({
+                        name: item.name,
+                        isFolder: item.isDirectory(),
+                        path: relPath.replace(/\\/g, '/'),
+                        ext: path.extname(item.name).toLowerCase(),
+                        size: item.isDirectory() ? '--' : formatSize(stats.size),
+                        date: stats.mtime.toLocaleDateString('en-GB') + ' ' + stats.mtime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                    });
+                }
+                if (item.isDirectory()) await scan(fullPath);
+            }
+        };
+        await scan(baseDir);
+        res.json(results);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
 app.get('/api/files', async (req, res) => {
     try {
         const relPath = req.query.path || '';
