@@ -12,7 +12,15 @@ fs.ensureDirSync(uploadDir);
 app.use(express.json());
 app.use(express.static('public'));
 
-const safePath = (p) => path.join(uploadDir, (p || '').replace(/\.\.\//g, ''));
+const safePath = (userPath = '') => {
+    const baseDir = path.resolve(__dirname, config.uploadDir || 'uploads');
+    const targetPath = path.resolve(baseDir, userPath);
+    if (!targetPath.startsWith(baseDir)) {
+        throw new Error('Unauthorized access');
+    }
+    return targetPath;
+
+};
 
 const getUniquePath = async (targetPath) => {
     let { dir, name, ext } = path.parse(targetPath);
